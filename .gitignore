@@ -10,7 +10,7 @@ __pycache__/
 src/
 testpy-output/
 utils/
-AUTHORS
+AUTHORS.txt
 CHANGES.md
 CMakeLists.txt
 CONTRIBUTING.md/
