@@ -1,3 +1,4 @@
+// Include necessary NS-3 core and network modules
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
@@ -12,6 +13,7 @@
 
 using namespace ns3;
 
+// Log component for easier debugging and logging
 NS_LOG_COMPONENT_DEFINE("EnhancedFloodAttack");
 
 // TCP SYN Flood Application with Port and Sequence Number Randomization
@@ -20,42 +22,52 @@ class TcpSynFloodApp : public Application
 public:
     TcpSynFloodApp();
     virtual ~TcpSynFloodApp();
+
+    // Setup method to configure the flood parameters
     void Setup(Ptr<Socket> socket, Address address, uint32_t nPackets, DataRate dataRate, 
                Ipv4Address srcIp, uint16_t srcPort, bool spoof, uint8_t tcpFlags, uint32_t packetSize);
 
 private:
+    // Application start/stop methods
     virtual void StartApplication(void);
     virtual void StopApplication(void);
+
+    // Internal helper methods for sending packets and scheduling transmission
     void SendPacket(void);
     void ScheduleTx(void);
 
-    Ptr<Socket> m_socket;
-    Address m_peer;
-    uint32_t m_nPackets;
-    DataRate m_dataRate;
-    EventId m_sendEvent;
-    bool m_running;
-    uint32_t m_packetsSent;
-    Ipv4Address m_srcIp;
-    uint16_t m_srcPort;
-    bool m_spoof;
-    uint8_t m_tcpFlags;
-    uint32_t m_packetSize;
+    // Member variables for the application
+    Ptr<Socket> m_socket;             // Socket for communication
+    Address m_peer;                   // Target address
+    uint32_t m_nPackets;              // Number of packets to send
+    DataRate m_dataRate;              // Data rate of the flood
+    EventId m_sendEvent;              // Event for scheduling next packet
+    bool m_running;                   // Application state (running or not)
+    uint32_t m_packetsSent;           // Counter for packets sent
+    Ipv4Address m_srcIp;              // Source IP address (spoofed or real)
+    uint16_t m_srcPort;               // Source port
+    bool m_spoof;                     // Flag for IP spoofing
+    uint8_t m_tcpFlags;               // TCP flags (SYN, ACK, etc.)
+    uint32_t m_packetSize;            // Size of each packet
     Ptr<UniformRandomVariable> m_randSeqNum;  // Random sequence number generator
 };
 
+// Constructor: Initialize member variables and create random sequence generator
 TcpSynFloodApp::TcpSynFloodApp() 
     : m_socket(0), m_peer(), m_nPackets(0), m_dataRate(0), m_sendEvent(), m_running(false), 
-      m_packetsSent(0), m_srcIp(Ipv4Address("0.0.0.0")), m_srcPort(0), m_spoof(false), m_tcpFlags(TcpHeader::SYN), m_packetSize(512)
+      m_packetsSent(0), m_srcIp(Ipv4Address("0.0.0.0")), m_srcPort(0), m_spoof(false), 
+      m_tcpFlags(TcpHeader::SYN), m_packetSize(512)
 {
-    m_randSeqNum = CreateObject<UniformRandomVariable>();  // Initialize random sequence number generator
+    m_randSeqNum = CreateObject<UniformRandomVariable>();  // Create a random sequence number generator
 }
 
+// Destructor: Clean up the socket
 TcpSynFloodApp::~TcpSynFloodApp()
 {
     m_socket = 0;
 }
 
+// Setup method to configure the application parameters
 void TcpSynFloodApp::Setup(Ptr<Socket> socket, Address address, uint32_t nPackets, DataRate dataRate, 
                            Ipv4Address srcIp, uint16_t srcPort, bool spoof, uint8_t tcpFlags, uint32_t packetSize)
 {
@@ -67,71 +79,76 @@ void TcpSynFloodApp::Setup(Ptr<Socket> socket, Address address, uint32_t nPacket
     m_srcPort = srcPort;
     m_spoof = spoof;
     m_tcpFlags = tcpFlags;
-    m_packetSize = packetSize;  // Packet size is now dynamic
+    m_packetSize = packetSize;  // Packet size is dynamic
 }
 
+// Method called when the application starts
 void TcpSynFloodApp::StartApplication(void)
 {
     m_running = true;
     m_packetsSent = 0;
-    m_socket->Bind();
-    m_socket->Connect(m_peer);
-    SendPacket();
+    m_socket->Bind();            // Bind the socket
+    m_socket->Connect(m_peer);   // Connect to the peer (target)
+    SendPacket();                // Start sending packets
 }
 
+// Method called when the application stops
 void TcpSynFloodApp::StopApplication(void)
 {
     m_running = false;
-
     if (m_sendEvent.IsPending())
     {
-        Simulator::Cancel(m_sendEvent);
+        Simulator::Cancel(m_sendEvent);  // Cancel any scheduled transmission
     }
-
     if (m_socket)
     {
-        m_socket->Close();
+        m_socket->Close();  // Close the socket
     }
 }
 
+// Method to send a packet
 void TcpSynFloodApp::SendPacket(void)
 {
-    Ptr<Packet> packet = Create<Packet>(m_packetSize);  // Varying packet size
+    Ptr<Packet> packet = Create<Packet>(m_packetSize);  // Create packet with the specified size
 
     TcpHeader tcpHeader;
-    tcpHeader.SetFlags(m_tcpFlags);
-    tcpHeader.SetSourcePort(m_srcPort);
-    tcpHeader.SetDestinationPort(InetSocketAddress::ConvertFrom(m_peer).GetPort());
+    tcpHeader.SetFlags(m_tcpFlags);                             // Set TCP flags (SYN, ACK, etc.)
+    tcpHeader.SetSourcePort(m_srcPort);                         // Set source port
+    tcpHeader.SetDestinationPort(InetSocketAddress::ConvertFrom(m_peer).GetPort());  // Set destination port
     
-    // Random sequence number for SYN flood
+    // Set a random sequence number for SYN flood attack
     tcpHeader.SetSequenceNumber(SequenceNumber32(m_randSeqNum->GetValue(1, 4294967295)));
 
     Ipv4Header ipHeader;
-    if (m_spoof)
+    if (m_spoof)  // If IP spoofing is enabled, set the source IP
     {
         ipHeader.SetSource(m_srcIp);
     }
-    ipHeader.SetDestination(InetSocketAddress::ConvertFrom(m_peer).GetIpv4());
+    ipHeader.SetDestination(InetSocketAddress::ConvertFrom(m_peer).GetIpv4());  // Set the destination IP
 
+    // Add headers to the packet
     packet->AddHeader(tcpHeader);
     packet->AddHeader(ipHeader);
 
+    // Log information about the sent packet
     NS_LOG_INFO("Sending TCP SYN packet from " << m_srcIp << " to " << InetSocketAddress::ConvertFrom(m_peer).GetIpv4() 
                  << " with random sequence number: " << tcpHeader.GetSequenceNumber());
 
-    m_socket->Send(packet);
+    m_socket->Send(packet);  // Send the packet
 
+    // Schedule the next packet if more packets are to be sent
     if (++m_packetsSent < m_nPackets)
     {
         ScheduleTx();
     }
 }
 
+// Schedule the next packet transmission based on packet size and data rate
 void TcpSynFloodApp::ScheduleTx(void)
 {
     if (m_running)
     {
-        Time tNext(Seconds(m_packetSize * 8 / static_cast<double>(m_dataRate.GetBitRate())));  // Based on packet size
+        Time tNext(Seconds(m_packetSize * 8 / static_cast<double>(m_dataRate.GetBitRate())));  // Calculate time interval
         m_sendEvent = Simulator::Schedule(tNext, &TcpSynFloodApp::SendPacket, this);
     }
 }
@@ -142,6 +159,8 @@ class UdpFloodApp : public Application
 public:
     UdpFloodApp();
     virtual ~UdpFloodApp();
+
+    // Setup method to configure the flood parameters
     void Setup(Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, 
                DataRate dataRate, Ipv4Address srcIp, uint16_t srcPort, bool spoof);
 
@@ -151,34 +170,37 @@ private:
     void SendPacket(void);
     void ScheduleTx(void);
 
-    Ptr<Socket> m_socket;
-    Address m_peer;
-    uint32_t m_packetSize;
-    uint32_t m_nPackets;
-    DataRate m_dataRate;
-    EventId m_sendEvent;
-    bool m_running;
-    uint32_t m_packetsSent;
-    Ipv4Address m_srcIp;
-    uint16_t m_srcPort;
-    bool m_spoof;
+    Ptr<Socket> m_socket;              // Socket for communication
+    Address m_peer;                    // Target address
+    uint32_t m_packetSize;             // Size of each packet
+    uint32_t m_nPackets;               // Number of packets to send
+    DataRate m_dataRate;               // Data rate of the flood
+    EventId m_sendEvent;               // Event for scheduling next packet
+    bool m_running;                    // Application state (running or not)
+    uint32_t m_packetsSent;            // Counter for packets sent
+    Ipv4Address m_srcIp;               // Source IP address (spoofed or real)
+    uint16_t m_srcPort;                // Source port
+    bool m_spoof;                      // Flag for IP spoofing
     Ptr<UniformRandomVariable> m_randPacketSize;  // Random packet size generator
 };
 
+// Constructor: Initialize member variables and create random packet size generator
 UdpFloodApp::UdpFloodApp() 
     : m_socket(0), m_peer(), m_packetSize(512), m_nPackets(0), m_dataRate(0), m_sendEvent(), 
       m_running(false), m_packetsSent(0), m_srcIp(Ipv4Address("0.0.0.0")), m_srcPort(0), m_spoof(false)
 {
-    m_randPacketSize = CreateObject<UniformRandomVariable>();  // Initialize random packet size generator
+    m_randPacketSize = CreateObject<UniformRandomVariable>();  // Create random packet size generator
     m_randPacketSize->SetAttribute("Min", DoubleValue(64));     // Minimum packet size
     m_randPacketSize->SetAttribute("Max", DoubleValue(1500));   // Maximum packet size
 }
 
+// Destructor: Clean up the socket
 UdpFloodApp::~UdpFloodApp()
 {
     m_socket = 0;
 }
 
+// Setup method to configure the application parameters
 void UdpFloodApp::Setup(Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, 
                         DataRate dataRate, Ipv4Address srcIp, uint16_t srcPort, bool spoof)
 {
@@ -192,61 +214,67 @@ void UdpFloodApp::Setup(Ptr<Socket> socket, Address address, uint32_t packetSize
     m_spoof = spoof;
 }
 
+// Method called when the application starts
 void UdpFloodApp::StartApplication(void)
 {
     m_running = true;
     m_packetsSent = 0;
-    m_socket->Bind();
-    m_socket->Connect(m_peer);
-    SendPacket();
+    m_socket->Bind();            // Bind the socket
+    m_socket->Connect(m_peer);   // Connect to the peer (target)
+    SendPacket();                // Start sending packets
 }
 
+// Method called when the application stops
 void UdpFloodApp::StopApplication(void)
 {
     m_running = false;
 
     if (m_sendEvent.IsPending())
     {
-        Simulator::Cancel(m_sendEvent);
+        Simulator::Cancel(m_sendEvent);  // Cancel any scheduled transmission
     }
 
     if (m_socket)
     {
-        m_socket->Close();
+        m_socket->Close();  // Close the socket
     }
 }
 
+// Method to send a packet
 void UdpFloodApp::SendPacket(void)
 {
-    m_packetSize = m_randPacketSize->GetValue();  // Varying packet size dynamically
+    m_packetSize = m_randPacketSize->GetValue();  // Randomize packet size
     Ptr<Packet> packet = Create<Packet>(m_packetSize);
 
     Ipv4Header ipHeader;
-    if (m_spoof)
+    if (m_spoof)  // If IP spoofing is enabled, set the source IP
     {
         ipHeader.SetSource(m_srcIp);
     }
-    ipHeader.SetDestination(InetSocketAddress::ConvertFrom(m_peer).GetIpv4());
+    ipHeader.SetDestination(InetSocketAddress::ConvertFrom(m_peer).GetIpv4());  // Set the destination IP
 
-    packet->AddHeader(ipHeader);
+    packet->AddHeader(ipHeader);  // Add the IP header
 
+    // Log information about the sent packet
     NS_LOG_INFO("Sending UDP packet from " << m_srcIp << " to " << InetSocketAddress::ConvertFrom(m_peer).GetIpv4() 
                  << " with packet size: " << m_packetSize);
 
-    m_socket->Send(packet);
+    m_socket->Send(packet);  // Send the packet
 
+    // Schedule the next packet if more packets are to be sent
     if (++m_packetsSent < m_nPackets)
     {
         ScheduleTx();
     }
 }
 
+// Schedule the next packet transmission based on packet size and data rate
 void UdpFloodApp::ScheduleTx(void)
 {
     if (m_running)
     {
-        double packetDuration = static_cast<double>(m_packetSize * 8) / m_dataRate.GetBitRate();  // Time for sending a packet (in seconds)
-        Time tNext = Seconds(packetDuration);
+        double packetDuration = static_cast<double>(m_packetSize * 8) / m_dataRate.GetBitRate();  // Calculate packet duration
+        Time tNext = Seconds(packetDuration);  // Time interval between packets
         m_sendEvent = Simulator::Schedule(tNext, &UdpFloodApp::SendPacket, this);
     }
 }
@@ -257,6 +285,8 @@ class IcmpFloodApp : public Application
 public:
     IcmpFloodApp();
     virtual ~IcmpFloodApp();
+
+    // Setup method to configure the flood parameters
     void Setup(Ptr<Socket> socket, Address address, uint32_t nPackets, DataRate dataRate, Ipv4Address srcIp, bool spoof);
 
 private:
@@ -265,28 +295,31 @@ private:
     void SendPacket(void);
     void ScheduleTx(void);
 
-    Ptr<Socket> m_socket;
-    Address m_peer;
-    uint32_t m_nPackets;
-    DataRate m_dataRate;
-    EventId m_sendEvent;
-    bool m_running;
-    uint32_t m_packetsSent;
-    Ipv4Address m_srcIp;
-    bool m_spoof;
+    Ptr<Socket> m_socket;             // Socket for communication
+    Address m_peer;                   // Target address
+    uint32_t m_nPackets;              // Number of packets to send
+    DataRate m_dataRate;              // Data rate of the flood
+    EventId m_sendEvent;              // Event for scheduling next packet
+    bool m_running;                   // Application state (running or not)
+    uint32_t m_packetsSent;           // Counter for packets sent
+    Ipv4Address m_srcIp;              // Source IP address (spoofed or real)
+    bool m_spoof;                     // Flag for IP spoofing
 };
 
+// Constructor: Initialize member variables
 IcmpFloodApp::IcmpFloodApp()
     : m_socket(0), m_peer(), m_nPackets(0), m_dataRate(0), m_sendEvent(), 
       m_running(false), m_packetsSent(0), m_srcIp(Ipv4Address("0.0.0.0")), m_spoof(false)
 {
 }
 
+// Destructor: Clean up the socket
 IcmpFloodApp::~IcmpFloodApp()
 {
     m_socket = 0;
 }
 
+// Setup method to configure the application parameters
 void IcmpFloodApp::Setup(Ptr<Socket> socket, Address address, uint32_t nPackets, DataRate dataRate, Ipv4Address srcIp, bool spoof)
 {
     m_socket = socket;
@@ -297,37 +330,42 @@ void IcmpFloodApp::Setup(Ptr<Socket> socket, Address address, uint32_t nPackets,
     m_spoof = spoof;
 }
 
+// Method called when the application starts
 void IcmpFloodApp::StartApplication(void)
 {
     m_running = true;
     m_packetsSent = 0;
-    m_socket->Bind();
-    m_socket->Connect(m_peer);
-    SendPacket();
+    m_socket->Bind();            // Bind the socket
+    m_socket->Connect(m_peer);   // Connect to the peer (target)
+    SendPacket();                // Start sending packets
 }
 
+// Method called when the application stops
 void IcmpFloodApp::StopApplication(void)
 {
     m_running = false;
 
     if (m_sendEvent.IsPending())
     {
-        Simulator::Cancel(m_sendEvent);
+        Simulator::Cancel(m_sendEvent);  // Cancel any scheduled transmission
     }
 
     if (m_socket)
     {
-        m_socket->Close();
+        m_socket->Close();  // Close the socket
     }
 }
 
+// Method to send a packet
 void IcmpFloodApp::SendPacket(void)
 {
-    Ptr<Packet> packet = Create<Packet>(64);  // Typical size of an ICMP echo request packet
-    Icmpv4Echo echo;
-    echo.SetSequenceNumber(m_packetsSent);
-    echo.SetIdentifier(0x1234);  // Example identifier
+    Ptr<Packet> packet = Create<Packet>(64);  // Typical size of an ICMP echo request
 
+    Icmpv4Echo echo;
+    echo.SetSequenceNumber(m_packetsSent);  // Set sequence number
+    echo.SetIdentifier(0x1234);             // Example identifier
+
+    // Add the IP header if spoofing is enabled
     if (m_spoof)
     {
         Ipv4Header ipHeader;
@@ -335,28 +373,33 @@ void IcmpFloodApp::SendPacket(void)
         packet->AddHeader(ipHeader);
     }
 
-    packet->AddHeader(echo);
+    packet->AddHeader(echo);  // Add the ICMP header
 
+    // Log information about the sent packet
     NS_LOG_INFO("Sending ICMP Echo Request from " << m_srcIp << " to " << InetSocketAddress::ConvertFrom(m_peer).GetIpv4());
 
-    m_socket->Send(packet);
+    m_socket->Send(packet);  // Send the packet
 
+    // Schedule the next packet if more packets are to be sent
     if (++m_packetsSent < m_nPackets)
     {
         ScheduleTx();
     }
 }
 
+// Schedule the next packet transmission based on data rate
 void IcmpFloodApp::ScheduleTx(void)
 {
     if (m_running)
     {
-        Time tNext(Seconds(64 * 8 / static_cast<double>(m_dataRate.GetBitRate())));  // Vary packet sending rate based on data rate
+        Time tNext(Seconds(64 * 8 / static_cast<double>(m_dataRate.GetBitRate())));  // Time interval based on data rate
         m_sendEvent = Simulator::Schedule(tNext, &IcmpFloodApp::SendPacket, this);
     }
 }
 
+// Main function: Set up the network topology and install applications
 int main(int argc, char *argv[]) {
+    // Enable logging components
     LogComponentEnable("UdpClient", LOG_LEVEL_INFO);
     LogComponentEnable("UdpServer", LOG_LEVEL_INFO);
     LogComponentEnable("OnOffApplication", LOG_LEVEL_INFO);
@@ -364,14 +407,16 @@ int main(int argc, char *argv[]) {
     LogComponentEnable("FlowMonitor", LOG_LEVEL_INFO);
     LogComponentEnable("EnhancedFloodAttack", LOG_LEVEL_INFO);
 
+    // Create nodes for smart home devices, router, internet, and server
     Ptr<Node> smartCamera = CreateObject<Node>();
     Ptr<Node> router = CreateObject<Node>();
     Ptr<Node> smartTV = CreateObject<Node>();
     Ptr<Node> smartSpeaker = CreateObject<Node>();
     Ptr<Node> smartThermostat = CreateObject<Node>();
-    Ptr<Node> internetNode = CreateObject<Node>();  // node for internet
+    Ptr<Node> internetNode = CreateObject<Node>();  // Node representing the internet
     Ptr<Node> apacheServer = CreateObject<Node>();  // Apache server node
 
+    // Group the home nodes in a container
     NodeContainer homeNodes;
     homeNodes.Add(smartCamera);
     homeNodes.Add(router);
@@ -379,6 +424,7 @@ int main(int argc, char *argv[]) {
     homeNodes.Add(smartSpeaker);
     homeNodes.Add(smartThermostat);
 
+    // Configure mobility for the nodes (fixed positions)
     MobilityHelper mobility;
     mobility.SetPositionAllocator("ns3::GridPositionAllocator", "MinX", DoubleValue(0.0), "MinY", DoubleValue(0.0), 
                                   "DeltaX", DoubleValue(5.0), "DeltaY", DoubleValue(10.0), "GridWidth", UintegerValue(3), 
@@ -388,12 +434,14 @@ int main(int argc, char *argv[]) {
     mobility.Install(internetNode);
     mobility.Install(apacheServer);
 
+    // Set up a point-to-point link between the router and the internet node
     PointToPointHelper pointToPoint;
     pointToPoint.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
     pointToPoint.SetChannelAttribute("Delay", StringValue("10ms"));
 
     NetDeviceContainer p2pDevices = pointToPoint.Install(router, internetNode);
 
+    // Configure WiFi for the smart home network
     YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
     YansWifiPhyHelper phy = YansWifiPhyHelper();
     phy.SetChannel(channel.Create());
@@ -404,9 +452,12 @@ int main(int argc, char *argv[]) {
 
     WifiMacHelper mac;
     Ssid ssid = Ssid("ns-3-ssid");
+
+    // Install WiFi on the router (Access Point)
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, router);
 
+    // Install WiFi on the smart devices (Stations)
     mac.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid), "ActiveProbing", BooleanValue(false));
     NetDeviceContainer staDevices;
     staDevices.Add(wifi.Install(phy, mac, smartCamera));
@@ -415,11 +466,13 @@ int main(int argc, char *argv[]) {
     staDevices.Add(wifi.Install(phy, mac, smartThermostat));
     NetDeviceContainer apacheDevice = wifi.Install(phy, mac, apacheServer);
 
+    // Install the internet stack on the nodes
     InternetStackHelper stack;
     stack.Install(homeNodes);
     stack.Install(internetNode);
     stack.Install(apacheServer);
 
+    // Set up IP addressing for the point-to-point and WiFi networks
     Ipv4AddressHelper address;
     address.SetBase("10.1.1.0", "255.255.255.0");
     Ipv4InterfaceContainer p2pInterfaces = address.Assign(p2pDevices);
@@ -427,6 +480,7 @@ int main(int argc, char *argv[]) {
     Ipv4InterfaceContainer staInterfaces = address.Assign(staDevices);
     Ipv4InterfaceContainer apacheInterface = address.Assign(apacheDevice);
 
+    // Create random variables for port numbers and data rates
     Ptr<UniformRandomVariable> randPort = CreateObject<UniformRandomVariable>();
     randPort->SetAttribute("Min", DoubleValue(1024));
     randPort->SetAttribute("Max", DoubleValue(65535));
@@ -543,7 +597,7 @@ int main(int argc, char *argv[]) {
     icmpFloodAppSpeaker->SetStartTime(Seconds(60.0));
     icmpFloodAppSpeaker->SetStopTime(Seconds(200.0));
 
-    // Add static routing
+    // Add static routing for the network
     Ipv4StaticRoutingHelper staticRouting;
     Ptr<Ipv4StaticRouting> routerStaticRouting = staticRouting.GetStaticRouting(router->GetObject<Ipv4>());
     routerStaticRouting->AddNetworkRouteTo(Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"), p2pInterfaces.GetAddress(1), 1);
@@ -551,20 +605,29 @@ int main(int argc, char *argv[]) {
     Ptr<Ipv4StaticRouting> apacheStaticRouting = staticRouting.GetStaticRouting(apacheServer->GetObject<Ipv4>());
     apacheStaticRouting->AddNetworkRouteTo(Ipv4Address("10.1.1.0"), Ipv4Mask("255.255.255.0"), p2pInterfaces.GetAddress(0), 1);
 
+    // Stop the simulation after 200 seconds
     Simulator::Stop(Seconds(200.0));
 
+    // Install packet sink on Apache server to receive attack traffic
     PacketSinkHelper apacheServerHelper("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), 80));
     ApplicationContainer apacheServerApp = apacheServerHelper.Install(apacheServer);
     apacheServerApp.Start(Seconds(1.0));
     apacheServerApp.Stop(Seconds(200.0));
 
+    // Enable flow monitoring
     FlowMonitorHelper flowmon;
     Ptr<FlowMonitor> monitor = flowmon.InstallAll();
+    
+    // Enable pcap tracing
     phy.EnablePcap("/media/sf_Ubuntu/tcp-udp-floodd", apDevice.Get(0));
 
+    // Run the simulation
     Simulator::Run();
 
+    // Serialize flow monitor output to XML file
     monitor->SerializeToXmlFile("tcp-udp-flood-flow.xml", true, true);
+
+    // Clean up the simulator
     Simulator::Destroy();
     return 0;
 }

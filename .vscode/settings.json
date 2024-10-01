@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "ffff": "c"
+        "ffff": "c",
+        "sstream": "cpp"
     }
 }
